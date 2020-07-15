@@ -92,6 +92,12 @@ extern void neigh_read_specific_ip(struct ipaddr *ip,
 				   struct interface *vlan_if);
 extern void route_read(struct zebra_ns *zns);
 
+/*
+ * Message batching interface.
+ */
+extern void kernel_update_multi(struct dplane_ctx_q *ctx_list);
+extern bool kernel_supports_batch(void);
+
 #ifdef __cplusplus
 }
 #endif
