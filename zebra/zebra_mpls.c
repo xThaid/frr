@@ -955,9 +955,6 @@ static wq_item_status lsp_process(struct work_queue *wq, void *data)
 			case ZEBRA_DPLANE_REQUEST_SUCCESS:
 				zvrf->lsp_installs++;
 				break;
-			/* Should never happen */
-			case ZEBRA_DPLANE_REQUEST_PENDING:
-				break;
 			}
 		}
 	} else {
@@ -982,10 +979,6 @@ static wq_item_status lsp_process(struct work_queue *wq, void *data)
 				break;
 			case ZEBRA_DPLANE_REQUEST_SUCCESS:
 				zvrf->lsp_removals++;
-				break;
-
-			/* Should never happen */
-			case ZEBRA_DPLANE_REQUEST_PENDING:
 				break;
 			}
 		} else if (CHECK_FLAG(lsp->flags, LSP_FLAG_CHANGED)) {
@@ -1029,10 +1022,6 @@ static wq_item_status lsp_process(struct work_queue *wq, void *data)
 				break;
 			case ZEBRA_DPLANE_REQUEST_SUCCESS:
 				zvrf->lsp_installs++;
-				break;
-
-			/* Should never happen */
-			case ZEBRA_DPLANE_REQUEST_PENDING:
 				break;
 			}
 		}
