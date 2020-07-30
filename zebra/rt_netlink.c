@@ -2225,15 +2225,6 @@ static ssize_t netlink_nexthop_msg_encoder(struct zebra_dplane_ctx *ctx,
 	return netlink_nexthop_msg_encode(cmd, ctx, buf, buflen);
 }
 
-/*
- * The communication with the kernel is done using the message batching
- * interface, so return a failure.
- */
-enum zebra_dplane_result kernel_nexthop_update(struct zebra_dplane_ctx *ctx)
-{
-	return ZEBRA_DPLANE_REQUEST_FAILURE;
-}
-
 enum netlink_msg_status
 netlink_put_nexthop_update_msg(struct nl_batch *bth,
 			       struct zebra_dplane_ctx *ctx)
@@ -2319,15 +2310,6 @@ netlink_put_route_update_msg(struct nl_batch *bth, struct zebra_dplane_ctx *ctx)
 					     ? netlink_newroute_msg_encoder
 					     : netlink_delroute_msg_encoder,
 				     false);
-}
-
-/*
- * The communication with the kernel is done using the message batching
- * interface, so return a failure.
- */
-enum zebra_dplane_result kernel_route_update(struct zebra_dplane_ctx *ctx)
-{
-	return ZEBRA_DPLANE_REQUEST_FAILURE;
 }
 
 /**
@@ -3558,29 +3540,11 @@ static ssize_t netlink_neigh_msg_encoder(struct zebra_dplane_ctx *ctx,
  * Update MAC, using dataplane context object.
  */
 
-/*
- * The communication with the kernel is done using the message batching
- * interface, so return a failure.
- */
-enum zebra_dplane_result kernel_mac_update_ctx(struct zebra_dplane_ctx *ctx)
-{
-	return ZEBRA_DPLANE_REQUEST_FAILURE;
-}
-
 enum netlink_msg_status netlink_put_mac_update_msg(struct nl_batch *bth,
 						   struct zebra_dplane_ctx *ctx)
 {
 	return netlink_batch_add_msg(bth, ctx, netlink_macfdb_update_ctx,
 				     false);
-}
-
-/*
- * The communication with the kernel is done using the message batching
- * interface, so return a failure.
- */
-enum zebra_dplane_result kernel_neigh_update_ctx(struct zebra_dplane_ctx *ctx)
-{
-	return ZEBRA_DPLANE_REQUEST_FAILURE;
 }
 
 enum netlink_msg_status
