@@ -1,0 +1,189 @@
+---
+title: "Google Summer of Code 2020 @ FRRouting"
+date: 2020-08-17
+tags: []
+draft: false
+---
+
+For the past three months I have been contributing to FRRouting as part
+of Google Summer of Code 2020 (GSoC 20). I am writing this post for the
+purpose of final project submission and also it will serve as a summary
+of my whole GSoC experience.
+
+## Project overview
+
+FRRouting (FRR) is an IP routing protocol suite for Linux and Unix platforms.
+FRR’s seamless integration with the native Linux/Unix IP networking stacks
+makes it applicable to a wide variety of use cases including connecting
+hosts/VMs/containers to the network, advertising network services, LAN switching
+and routing, Internet access routers, and Internet peering.
+
+My GSoC project "Dataplane Batching" aimed to enhance the communication with
+the kernel. Here is a short background and the motivation of the project. 
+
+Thanks to the FRR design architecture, there is the abstracted queue of
+dataplane context objects (structures containing all required data for
+e.g., a route addition) for messages waiting to be sent. They are then
+dequeued and sent to the appropriate dataplane. They were processed one
+at a time, so there was room for improvement.
+
+This roughly shows how it worked before:  
+![Dataplane <-> Kernel communication](/post/images/dplane.png)
+
+FRR uses several different methods of the communication with the
+kernel and some of them (the Linux Netlink) thankfully support batch
+sending messages. So we could take advantage of that and as a result
+improve overall processing time. And this is what the project generally
+was about. Basically, the goal was to adjust the data plane layer code 
+to process multiple context objects at a time and then to add support
+for sending and receiving batches of messages via Netlink. Referring 
+to the picture above, I had to add an ability to pass many messages 
+between dataplane and the kernel at one time.
+
+### Implementation details
+
+Going into the technical aspect of my work done over the summer, so
+if you are not interested in this topic go ahead and skip this section.
+
+I started from changing FRR's dataplane abstraction code to make it 
+capable of processing multiple context object. Actually, it was quite
+straightforward. In brief, instead of passing a single context object 
+to the lower layer, a list of contexts is now handed. With that being
+done, I could add support for batch sending messages in the kernel-facing
+code. The primary goal was to implement this for the Linux and possibly 
+other OS, but anyway it turned out that, as of now, BSD's routing sockets
+do not support batching.
+
+The next step was to create a new API for encoding Netlink messages, as 
+the old one was not too consistent. I reorganized this in a way that all
+the functions take a context object and encode it to the given buffer. 
+The old API also lacked any awareness of the size of the buffer, so it used
+an assumption that the message would always fit in the buffer, which is not
+the safest assumption. In the result, we now have more modular and safer API
+with well-defined interface. Also it makes this API easier to be reused by other code.
+
+Then it was time to write core utility functions for batching. Nothing special,
+but the thing worth mentioning is that there is one global buffer that is directly
+used for encoding messages. So when we send some updates to the kernel, we do not 
+neither allocate any big chunks of memory nor make unnecessary copies. I know, 
+*premature optimization is the root of all evil*, but it does not affect the readability
+of the code that much and it was not hard to write.
+
+Error handling was quite tricky. When we send a batch of messages some of
+them may fail. We need then to corelate those failed messages with context
+objects and alert the upper level dataplane handling code about it. The
+response message has the same sequence number as the request we sent, so
+by having sequence number mapping we can easily match received messages 
+with context objects.
+
+Last but not least part of my work was to write some tests. The code I 
+wrote is tightly integrated with the existing one, so I decided not to 
+write any unit tests, as they would require many mockups. So at least I
+tried to make some integration tests, but also it was not that easy. The 
+first issue is that the batching is not deterministic. The producer of 
+context objects (main thread) is independent of the consumer (dataplane thread),
+so the size of the batch highly depends on the scheduler. The second problem is 
+that there was not any method to make the kernel return error message. It could 
+be done by dataplane plugins, but this would require to incorporate them in to
+the testing system and that could take some time to do. In the end, I added an
+ability to change the size of the buffer using in the batching dynamically, so
+we are able to shrink the buffer and then just send many requests to the kernel
+using SHARP, a special daemon that provides miscellaneous functionality used 
+for testing FRR.
+
+### Results
+
+Considering that I was able to meet all my planned goals and also initiate the
+work on additional issues, I would say I was able to surpass the expectations
+of the project.
+
+The real objective of the project was to improve performance of the code, but
+it was not certain at the beginning how it would really speed up processing time.
+There are many more factors that influence this, so the only way to check it were
+performance tests. This was one of the most exciting part of the coding phase.
+
+Here are the results:
+
+![Performance tests](/post/images/batching_perf.png)
+
+This shows time in seconds required to install 1M routes and then to delete them.
+You can see that not only the overall processing time has been reduced, but also 
+the share of the dplane thread is now much smaller. This is mostly because there
+are now less user <-> kernel transitions than it was before.
+
+I also did performance analysis using flame graps. The samples were taken while
+installing 1M routes. The dplane thread is the rightmost column "zebra_dplane".
+You can see that the most of work done now is in the kernel, which is a good sign,
+because there is not much left to optimize.
+
+![Flamegraph Batching](/post/images/flamegraph_batching.svg)
+
+It is also worth looking at the flame graph taken without batching enhancement,
+so the differences can be spotted:
+
+![Flamegraph Pre-Batching](/post/images/flamegraph.svg)
+
+If you have troubles in your browser (flame graphs should be interactive), try
+the direct SVG version: [batching](/post/images/flamegraph_batching.svg),[pre-batching](/post/images/flamegraph.svg).
+
+### Contributions
+
+The following is the chronological list of pull-requests as required for the final project submission:
+
+* [zebra: dataplane batching](https://github.com/FRRouting/frr/pull/6755)
+* [zebra: netlink cleanup](https://github.com/FRRouting/frr/pull/6649)
+* [zebra: prepare dplane for batching](https://github.com/FRRouting/frr/pull/6646)
+* [Clean up the zebra's Netlink API](https://github.com/FRRouting/frr/pull/6569)
+
+### Other work
+
+I also worked on a few different issues. They were more or less related to my main project,
+but they concered the same part of FRR.
+
+* [lib, zebra: add support for sending ARP requests](https://github.com/FRRouting/frr/pull/6869)
+* [zebra: fix the installation of the evpn neighbor update](https://github.com/FRRouting/frr/pull/6752)
+* [zebra: move ip rule installation to use dplane thread](https://github.com/FRRouting/frr/pull/6465)
+* [zebra: Add vrf name and id to debugs](https://github.com/FRRouting/frr/pull/5988)
+* [zebra: make common function for RTM_NEWNEIGH calls](https://github.com/FRRouting/frr/pull/5928)
+
+## Conclusions
+
+FRRouting is the first open source project I have contributed to. I came across
+FRR when I was been seeking for the GSoC organization. There were several factors
+I made my decision on. Firstly, I was looking for fast-paced project, so my patches
+would not sit, age, and go nowhere. It is also important to me to have a smooth and
+efficient communication. On FRR's Slack I usually got response within several minutes
+and it was by no means because I was a potential GSoC student back then. Other key
+factor was that it could a great opportunity to learn more about computer networks. 
+The project also covered many fields that I am especially interested in such as 
+low-level programming and interactions with the kernel.
+
+What I liked the most about the project is that my work will actually be used. It 
+is not a very big feature, but it modifies the crucial part of the code where the 
+most of communication with the kernel happens. This is really satisfying and motivating
+especially while realizing about that FRR is widely deployed in many places.
+
+There were some challenges I faced during the program. The biggest one was related 
+to the fact that I had to integrate a new feature into the existing code. I spent 
+much of my work time wondering how to handle some edge case without breaking anything 
+else. In the result, the code was not always that clean and simple as planned, but I 
+am still happy with the results. Other challenge was to deal with the large code base
+and understand it to some extent so that I could extend its functionalities. On top 
+of that, I had to learn more details about networking in the Linux not only for the 
+project itself, but also to be more proficient using miscellaneous tools.
+
+Overall, Google Summer of Code was a great experience and also a good opportunity 
+to learn how open source communities function. This was nowhere close to what I had
+worked on before. I hope it will not be my last contribution to a open source project.
+
+### Acknowledgement
+
+I would like to express my special thanks to [Stephen Worley](https://github.com/sworleys) 
+and [Quentin Young](https://github.com/qlyoung) for being the awesome mentors they were. 
+It was a pleasant collaboration mainly because of their guidance, patience, excellent 
+explanations and quick responses even during the weekends. I am also very grateful to 
+FRRouting community who reviewed my work and provided feedback, especially 
+[Mark Stapp](https://github.com/mjstapp) and [Donald Sharp](https://github.com/donaldsharp).
+The pictures above are taken from Donald's slides and also I was able to attend this year’s 
+Netdev conference because of his support. Once again a big thank you. And of course many thanks
+to Google for giving me the opportunity to work on the project.
